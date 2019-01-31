@@ -37,7 +37,13 @@ KBUILD_DIR = $(TUP_CWD)
 ifeq ($(KBUILD_USE_THIN_LD),y)
   !cmd_xld.o = |> ^ LD   %o [THIN]^ $(AR) rcsT %o %f |>
 else
-  !cmd_xld.o = |> ^ LD   %o^ $(LD) -r -o %o %f |>
+  !cmd_xld.o =								\
+  |> ^ LD   %o^								\
+     KBUILD_DIR="$(KBUILD_DIR)" KBUILD_LD="$(LD)"			\
+     KBUILD_CC="$(CC)"							\
+     KBUILD_IF_LDFLAGS="$(IF-LDFLAGS)"					\
+     $(KBUILD_DIR)/ld.sh $(LDFLAGS) $(ldflags-y) -r -o %o %f		\
+  |>
 endif
 
 #
