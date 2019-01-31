@@ -1,0 +1,78 @@
+#
+# Core commands.
+#
+KBUILD_DIR = $(TUP_CWD)
+
+#
+# .[cS] -> .o
+#
+!cmd_cc.o =							\
+|> ^ CC   %o^							\
+   KBUILD_DIR="$(KBUILD_DIR)" KBUILD_CC="$(CC)"			\
+   KBUILD_IF_CCFLAGS="$(IF-CCFLAGS)"				\
+   $(KBUILD_DIR)/cc.sh $(CCFLAGS) $(ccflags-y) $(CCFLAGS.%g)	\
+		       $(CCFLAGS_%o) -c %f -o %o		\
+|>
+
+#
+# .o+ -> .a
+#
+!cmd_ar.a =								\
+|> ^ AR   %o^								\
+   KBUILD_DIR="$(KBUILD_DIR)" KBUILD_AR="$(AR)"				\
+   KBUILD_IF_ARFLAGS="$(IF-ARFLAGS)"					\
+   $(KBUILD_DIR)/ar.sh $(ARFLAGS) $(arflags-y) $(ARFLAGS_%o) %o %f	\
+|>
+
+#
+# Generate empty .o
+#
+!cmd_empty.o =								\
+|> ^ LD   %o [EMPTY]^							\
+   KBUILD_DIR="$(KBUILD_DIR)" KBUILD_AR="$(AR)"				\
+   KBUILD_IF_ARFLAGS="$(IF-ARFLAGS)"					\
+   $(KBUILD_DIR)/ar.sh $(ARFLAGS) $(arflags-y) $(ARFLAGS_%o) %o		\
+|>
+
+ifeq ($(KBUILD_USE_THIN_LD),y)
+  !cmd_xld.o = |> ^ LD   %o [THIN]^ $(AR) rcsT %o %f |>
+else
+  !cmd_xld.o = |> ^ LD   %o^ $(LD) -r -o %o %f |>
+endif
+
+#
+# .o+ -> .o
+# .o+ -> .so
+# .o+ -> executable
+#
+!cmd_ld.o =								\
+|> ^ LD   %o^								\
+   KBUILD_DIR="$(KBUILD_DIR)" KBUILD_LD="$(LD)"				\
+   KBUILD_CC="$(CC)"							\
+   KBUILD_IF_LDFLAGS="$(IF-LDFLAGS)"					\
+   $(KBUILD_DIR)/ld.sh $(LDFLAGS) $(ldflags-y) $(LDFLAGS.o)		\
+		       $(LDFLAGS_%o) -r -o %o %f			\
+		       $(LDFLAGS_POST_%o) $(LDFLAGS_POST.o)		\
+|>
+
+!cmd_ld.so =								\
+|> ^ LD   %o^								\
+   KBUILD_DIR="$(KBUILD_DIR)" KBUILD_LD="$(LD)"				\
+   KBUILD_CC="$(CC)"							\
+   KBUILD_IF_LDFLAGS="$(IF-LDFLAGS)"					\
+   KBUILD_USE_CC_LINK="$(KBUILD_USE_CC_LINK)"				\
+   $(KBUILD_DIR)/ld.sh $(LDFLAGS) $(ldflags-y) $(LDFLAGS.so)		\
+		       $(LDFLAGS_%o) -o %o %f				\
+		       $(LDFLAGS_POST_%o) $(LDFLAGS_POST.so)		\
+|>
+
+!cmd_ld.ex =								\
+|> ^ LD   %o^								\
+   KBUILD_DIR="$(KBUILD_DIR)" KBUILD_LD="$(LD)"				\
+   KBUILD_CC="$(CC)"							\
+   KBUILD_IF_LDFLAGS="$(IF-LDFLAGS)"					\
+   KBUILD_USE_CC_LINK="$(KBUILD_USE_CC_LINK)"				\
+   $(KBUILD_DIR)/ld.sh $(LDFLAGS) $(ldflags-y) $(LDFLAGS.ex)		\
+		       $(LDFLAGS_%o) -o %o %f				\
+		       $(LDFLAGS_POST_%o) $(LDFLAGS_POST.ex)		\
+|>

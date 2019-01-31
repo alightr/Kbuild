@@ -1,0 +1,308 @@
+	Linux-like Kbuild for Tup
+
+This provides Linux-like Kbuild facility for Tup.
+
+	USING
+
+To use Kbuild, ensure the following variables are defined,
+
+1. $(CC)
+
+   Compiler used for compiling C and assembler sources. Additionally, iff
+   KBUILD_USE_CC_LINK=y, for final linking (executable or shared-library).
+
+   Compilation flags may be defined in $(CCFLAGS) or $(ccflags-y). Source
+   extension specific flags may be defined in $(CCFLAGS.S) and $(CCFLAGS.c),
+   for assembler and C source files, respectively. Output target specific flags
+   may be defined in $(CCFLAGS_<out>); where <out> is the output target, f.e.,
+
+	obj-y := foo.o
+	CCFLAGS_foo.o = ...
+
+   Flags are specified to compiler from least specific to most,
+
+	$(CC) $(CCFLAGS) $(ccflags-y) $(CCFLAGS.<ext>) $(CCFLAGS_<out>) ...
+
+   Note: Do **not** append to above flags even if KBUILD_USE_CC_LINK=y, continue
+   to specify linking specific flags to $(LDFLAGS) & co., ld.sh will fix
+   relevant flags for invoking $(CC) with.
+
+2. $(LD)
+
+   Linker to use for partial linking and, iff KBUILD_USE_CC_LINK=n, for final
+   linking.
+
+   Linking flags may be defined in $(LDFLAGS) and $(ldflags-y). Target extension
+   specific flags may be defined in $(LDFLAGS.o), $(LDFLAGS.so), and
+   $(LDFLAGS.ex), for partially-linked objects, shared-objects, and executables,
+   respectively. Output target specific flags may be defined in
+   $(LDFLAGS_<out>); where <out> is the output target, f.e.,
+
+	ld-y := foo.o
+	LDFLAGS_foo.o = ...
+
+   In addition to the above, POST variants of the above are provided to allow
+   specifying flags to set post ouput target and input source,
+
+	$(LDFLAGS_<out>) -> $(LDFLAGS_POST_<out>)
+	$(LDFLAGS.o) -> $(LDFLAGS_POST.o)
+	$(LDFLAGS.so) -> $(LDFLAGS_POST.so)
+	$(LDFLAGS.ex) -> $(LDFLAGS_POST.ex)
+
+   Flags are provided to $(LD) as follows,
+
+	$(LD) $(LDFLAGS) $(ldflags-y) $(LDFLAGS.<ext>) $(LDFLAGS_<out>)
+		-o <out> <input>+
+		$(LDFLAGS_POST_<out>) $(LDFLAGS_POST.<ext>)
+
+   Note: KBUILD_USE_THIN_LD=y may be defined to generate thin archives using
+   $(AR) in place of $(LD) for any implicit partial linking (including
+   generating built-in.o, multi-object sub-targets; excluding explicit partial
+   link targets defined in $(ld-y)).
+
+3. $(AR)
+
+   Archiver to use for generating empty objects and static archives.
+
+   Archiving flags may be defined in $(ARFLAGS) or $(arflags-y). Output target
+   specific flags may be defined in $(ARFLAGS_<out>).
+
+   Flags are specified to archiver from least specific to most,
+
+	$(AR) $(ARFLAGS) $(arflags-y) $(ARFLAGS_<out>) ...
+
+   Note: Unlike ar, $(AR) expects space separated flags, i.e.
+
+	ar rcs ...
+	$(AR) r c s ...
+
+All tools defined above are invoked through their respective wrapper scripts
+(i.e. ar is executed through ar.sh). The wrapper scripts allow conditional
+flag support. See ar.sh, cc.sh, and ld.sh for more details.
+
+	COMPILING
+
+Compilation targets may be defined through,
+
+1. $(obj-y)
+
+   To generate built-in objects.
+
+   Multi-object definitions are supported,
+
+	obj-y := foo.o bar.o baz/
+	foo.o-y := foo1.o foo2.o
+
+	#$ compile foo1.[cS] into foo1.o
+	#$ compile foo2.[cS] into foo2.o
+	#$ partial link foo1.o and foo2.o into foo.o
+	#$ compile bar.[cS] into bar.o
+	#$ partial link foo.o, bar.o, baz/built-in.o into built-in.o
+
+2. $(obj-m)
+
+   To generate module objects.
+
+   Example:
+
+	KBUILD_MODULE_EXT = ko
+	!cmd_mod.ko = |> ... |>
+
+	obj-m := foo.o bar.o
+	foo.o-y := foo1.o foo2.o
+
+	#$ compile foo1.[cS] into foo1.o
+	#$ compile foo2.[cS] into foo2.o
+	#$ partial link foo1.o and foo2.o into foo.o
+	#$ invoke !cmd_mod.ko with foo.o to generate foo.ko
+	#$ compile bar.[cS] into bar.o
+	#$ invoke !cmd_mod.ko with bar.o to generate bar.ko
+
+   Note: $(KBUILD_MODULE_EXT) and !cmd_mod.ko *must* be defined if $(obj-m)
+   is used. !cmd_mod.ko is expected to accept a single object file, and
+   generate linked module with same base name and extension of
+   $(KBUILD_MODULE_EXT).
+
+   Note: Unlike $(obj-y), $(obj-m) can only accept object targets, however,
+   multi-object sub-targets may still contain directory references,
+
+	# INVALID
+	obj-m := foo/
+	# OK
+	obj-m := foo.o
+	foo.o-y := foo/
+	foo.o-y += bar.o
+
+3. $(lib-y)
+
+   To generate built-in static archive.
+
+   Like $(obj-y); however, objects are packed into a static archive,
+
+	lib-y := foo.o bar.o baz/ whiz/lib.a
+	foo.o-y := foo1.o foo2.o
+
+	#$ compile foo1.[cS] into foo1.o
+	#$ compile foo2.[cS] into foo2.o
+	#$ partial link foo1.o and foo2.o into foo.o
+	#$ compile bar.[cS] into bar.o
+	#$ partial link foo.o, bar.o, baz/built-in.o, whiz/lib.a into lib.a
+
+   Note that trailing forward slash always implies built-in.o of corresponding
+   directory.
+
+4. $(ar-y)
+
+   To generate static archive.
+
+   Like $(lib-y); however, targets are static archives,
+
+	ar-y := foo.a bar.a
+	foo.o-y := foo1.o foo2.o
+
+	#$ compile foo1.[cS] into foo1.o
+	#$ compile foo2.[cS] into foo2.o
+	#$ partial link foo1.o and foo2.o into foo.o
+	#$ archive foo.o into foo.a
+	#$ compile bar.[cS] into bar.o
+	#$ archive bar.o into bar.a
+
+5. $(ld-y)
+
+   To generate partially linked object or final linked binary.
+
+   Targets with '.o' extension are partially linked, '.so' are linked into
+   shared object, and without extension are linked into executables. For
+   example,
+
+	ld-y := foo.o bar.so baz
+	foo.o-y := foo1.o foo2.o
+
+	#$ compile foo1.[cS] into foo1.o
+	#$ compile foo2.[cS] into foo2.o
+	#$ partial link foo1.o and foo2.o into foo.o
+	#$ compile bar.[cS] into bar.o
+	#$ link bar.o into bar.so (shared object)
+	#$ compile baz.[cS] into baz.o
+	#$ link baz.o into baz (executable)
+
+   With the exception of partial link targets, targets may either be composed
+   of multi-object sub-targets or have base name source available. For example,
+
+	ld-y := bar.so baz
+	bar.so-y := bar1.o bar2.o
+	baz-y := baz1.o baz2.o
+
+	CUSTOM TARGETS
+
+Additionally, custom targets (compilation or otherwise) may be defined through
+$(extra-y). Custom targets are evaluated **before** all other targets.
+
+Targets appended to $(extra-y) are treated as targets. Each target is expected
+to define the source extension and command to generate output. For example,
+
+	cmd_foo.b_source_ext := a
+	!cmd_foo.b := |> ... |>
+	extra-y := foo
+
+	foo-y += file1.b file2.b
+
+	#$ invoke !cmd_foo.b with file1.a to generate file1.b
+	#$ invoke !cmd_foo.b with file2.a to generate file2.b
+
+	GROUPS
+
+Target outputs may be grouped. Groups are directory specific, see tup's
+documentation for more details on groups. Outputs may be registered with
+multiple groups.
+
+1. $(<out>-group-y)
+
+   List of groups to append target output to.
+
+2. $(<cmd>-group-y)
+
+   List of groups to append $(extra-y) target <cmd>'s output to.
+
+3. $(lib-group-y)
+
+   List of groups to append *all* (irrespective of directory) $(lib-y) target
+   outputs to.
+
+4. $(ar-group-y)
+
+   List of groups to append *all* (irrespective of directory) $(ar-y) target
+   outputs to.
+
+5. $(ld.so-group-y)
+
+   List of groups to append *all* shared object $(ld-y) target outputs to.
+
+6. $(ld.o-group-y)
+
+   List of groups to append *all* partial link object $(ld-y) target outputs to.
+
+7. $(ld.ex-group-y)
+
+   List of groups to append *all* executable $(ld-y) target outputs to.
+
+8. $(mod-group-y)
+
+   List of groups to append *all* module $(obj-m) target outputs to.
+
+	OUTPUT/OUTPUT DEPENDENCIES
+
+Dependencies for outputs on other outputs may be defined through multiple
+means, from target output specific to command specific. Dependencies may
+contain groups. Dependencies define execution order of target w.r.t other
+targets. If a generating target A depends on a generated target B, A has a
+direct dependency on B, and should be defined. Indirect dependencies are not
+required to be explicitly defined.
+
+Dependencies are applied from least specific to most specific. For example,
+
+	depends-y := foo.a
+	obj-depends-y := whiz.so
+	bar.o-depends-y := baz.o
+
+	# Dependencies of bar.o: (foo.a whiz.so baz.o)
+
+1. $(<out>-depends-y)
+
+   Dependencies required by target ouput.
+
+2. $(<cmd>-depends-y)
+
+   Dependencies required by *all* $(extra-y) target <cmd>'s output.
+
+3. $(obj-depends-y)
+
+   Dependencies for *all* compiled objects.
+
+4. $(mod-depends-y)
+
+   Dependencies for *all* $(obj-m) targets.
+
+5. $(lib-depends-y)
+
+   Dependencies for *all* $(lib-y) targets.
+
+6. $(ar-depends-y)
+
+   Dependencies for *all* $(ar-y) targets.
+
+7. $(ld.so-depends-y)
+
+   Dependencies for *all* shared object $(ld-y) targets.
+
+8. $(ld.o-depends-y)
+
+   Dependencies for *all* partial link object $(ld-y) targets.
+
+9. $(ld.ex-depends-y)
+
+   Dependencies for *all* executable $(ld-y) targets.
+
+10. $(depends-y)
+
+    Dependencies for *all* targets.
